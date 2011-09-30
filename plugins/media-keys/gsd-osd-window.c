@@ -57,6 +57,7 @@ struct GsdOsdWindowPrivate
         gint                     screen_width;
         gint                     screen_height;
         gint                     monitor;
+        gboolean                 ignore_event;
 };
 
 enum {
@@ -526,6 +527,7 @@ gsd_osd_window_real_hide (GtkWidget *widget)
 static void
 gsd_osd_window_real_realize (GtkWidget *widget)
 {
+        GsdOsdWindow *window = GSD_OSD_WINDOW (widget);
         cairo_region_t *region;
         GdkScreen *screen;
         GdkVisual *visual;
@@ -542,10 +544,12 @@ gsd_osd_window_real_realize (GtkWidget *widget)
                 GTK_WIDGET_CLASS (gsd_osd_window_parent_class)->realize (widget);
         }
 
-        /* make the whole window ignore events */
-        region = cairo_region_create ();
-        gtk_widget_input_shape_combine_region (widget, region);
-        cairo_region_destroy (region);
+        if (window->priv->ignore_event) {
+                /* make the whole window ignore events */
+                region = cairo_region_create ();
+                gtk_widget_input_shape_combine_region (widget, region);
+                cairo_region_destroy (region);
+        }
 }
 
 static void
@@ -720,6 +724,8 @@ gsd_osd_window_init (GsdOsdWindow *window)
         gtk_window_set_default_size (GTK_WINDOW (window), size, size);
 
         window->priv->fade_out_alpha = 1.0;
+
+        window->priv->ignore_event = TRUE;
 }
 
 GtkWidget *
@@ -743,4 +749,17 @@ gsd_osd_window_update_and_hide (GsdOsdWindow *window)
         if (window->priv->is_composited) {
                 gtk_widget_queue_draw (GTK_WIDGET (window));
         }
+}
+
+void
+gsd_osd_window_stop_hide_timeout (GsdOsdWindow *window)
+{
+        remove_hide_timeout (window);
+}
+
+void
+gsd_osd_window_set_ignore_event  (GsdOsdWindow *window,
+                                  gboolean      ignore)
+{
+        window->priv->ignore_event = ignore;
 }
