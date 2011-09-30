@@ -376,6 +376,33 @@ fi
 
 AM_CONDITIONAL(BUILD_PRINT_NOTIFICATIONS, [test x"$enable_cups" = x"yes"])
 
+dnl ==============================================
+dnl urfkill
+dnl ==============================================
+
+have_urfkill=false
+AC_ARG_ENABLE(urfkill,
+  AC_HELP_STRING([--disable-urfkill],
+                 [turn off urfkill support]),
+       [case "${enableval}" in
+               yes) WANT_URFKILL=yes ;;
+               no)  WANT_URFKILL=no ;;
+               *) AC_MSG_ERROR(bad value ${enableval} for --disable-urfkill) ;;
+       esac],
+       [WANT_URFKILL=yes]) dnl Default value
+
+if test x$WANT_URFKILL = xyes ; then
+       URFKILL_REQUIRED_VERSION=0.3.0
+       PKG_CHECK_MODULES(URFKILL, glib-2.0 urfkill-glib >= $URFKILL_REQUIRED_VERSION,
+             [have_urfkill=true
+              AC_DEFINE(HAVE_URFKILL, 1, [Define if urfkill should be used])],
+             [have_urfkill=false])
+fi
+AM_CONDITIONAL(HAVE_URFKILL, test "x$have_urfkill" = "xtrue")
+
+AC_SUBST(URFKILL_CFLAGS)
+AC_SUBST(URFKILL_LIBS)
+
 # ---------------------------------------------------------------------------
 # Enable Profiling
 # ---------------------------------------------------------------------------
@@ -542,6 +569,7 @@ echo "
         PackageKit support:       ${have_packagekit}
         Smartcard support:        ${have_smartcard_support}
         Cups support:             ${have_cups}
+        URFkill support:          ${have_urfkill}
 ${NSS_DATABASE:+\
         System nssdb:             ${NSS_DATABASE}
 }\

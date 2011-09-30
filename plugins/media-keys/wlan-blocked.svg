@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="128"
+   height="128"
+   id="svg2985"
+   version="1.1"
+   inkscape:version="0.48.1 r9760"
+   sodipodi:docname="wlan-blocked.svg">
+  <defs
+     id="defs2987">
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient4295"
+       id="linearGradient4301"
+       x1="24.04163"
+       y1="48.306797"
+       x2="24.04163"
+       y2="-58.024525"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       id="linearGradient4295">
+      <stop
+         style="stop-color:#d40000;stop-opacity:1;"
+         offset="0"
+         id="stop4297" />
+      <stop
+         style="stop-color:#d40000;stop-opacity:0;"
+         offset="1"
+         id="stop4299" />
+    </linearGradient>
+    <filter
+       color-interpolation-filters="sRGB"
+       id="filter4303"
+       inkscape:label="Drop shadow"
+       width="1.5"
+       height="1.5"
+       x="-0.25"
+       y="-0.25">
+      <feGaussianBlur
+         id="feGaussianBlur4305"
+         in="SourceAlpha"
+         stdDeviation="0"
+         result="blur" />
+      <feColorMatrix
+         id="feColorMatrix4307"
+         result="bluralpha"
+         type="matrix"
+         values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.5 0 " />
+      <feOffset
+         id="feOffset4309"
+         in="bluralpha"
+         dx="0"
+         dy="0"
+         result="offsetBlur" />
+      <feMerge
+         id="feMerge4311"
+         result="fbSourceGraphic">
+        <feMergeNode
+           id="feMergeNode4313"
+           in="offsetBlur" />
+        <feMergeNode
+           id="feMergeNode4315"
+           in="SourceGraphic" />
+      </feMerge>
+      <feColorMatrix
+         result="fbSourceGraphicAlpha"
+         in="fbSourceGraphic"
+         values="0 0 0 -1 0 0 0 0 -1 0 0 0 0 -1 0 0 0 0 1 0"
+         id="feColorMatrix4392" />
+      <feGaussianBlur
+         id="feGaussianBlur4394"
+         in="fbSourceGraphicAlpha"
+         stdDeviation="1"
+         result="blur" />
+      <feColorMatrix
+         id="feColorMatrix4396"
+         result="bluralpha"
+         type="matrix"
+         values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.5 0 " />
+      <feOffset
+         id="feOffset4398"
+         in="bluralpha"
+         dx="1"
+         dy="1"
+         result="offsetBlur" />
+      <feMerge
+         id="feMerge4400">
+        <feMergeNode
+           id="feMergeNode4402"
+           in="offsetBlur" />
+        <feMergeNode
+           id="feMergeNode4404"
+           in="fbSourceGraphic" />
+      </feMerge>
+    </filter>
+    <linearGradient
+       gradientTransform="translate(75,-4)"
+       y2="-58.024525"
+       x2="24.04163"
+       y1="48.306797"
+       x1="24.04163"
+       gradientUnits="userSpaceOnUse"
+       id="linearGradient3270"
+       xlink:href="#linearGradient4295"
+       inkscape:collect="always" />
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="5.6568542"
+     inkscape:cx="76.904388"
+     inkscape:cy="58.321842"
+     inkscape:current-layer="layer1"
+     showgrid="true"
+     inkscape:grid-bbox="true"
+     inkscape:document-units="px"
+     inkscape:window-width="1680"
+     inkscape:window-height="993"
+     inkscape:window-x="0"
+     inkscape:window-y="24"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata2990">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     id="layer1"
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     transform="translate(0,80)">
+    <path
+       style="fill:#999999;fill-opacity:1;fill-rule:evenodd;stroke:none"
+       d="M 22.75 6.1875 C 13.622957 16.148259 8.0625 29.427373 8.0625 44 C 8.0625 58.572627 13.622957 71.859086 22.75 81.8125 L 27.1875 77.75 C 19.030615 68.85554 14.0625 56.98987 14.0625 43.96875 C 14.0625 30.970949 19.025343 19.13179 27.15625 10.25 L 22.75 6.1875 z M 105.25 6.1875 L 100.84375 10.25 C 108.97466 19.13179 113.9375 30.970949 113.9375 43.96875 C 113.9375 56.98987 108.96939 68.85554 100.8125 77.75 L 105.25 81.8125 C 114.37704 71.859086 119.9375 58.572627 119.9375 44 C 119.9375 29.427373 114.37704 16.148259 105.25 6.1875 z M 37.53125 19.71875 C 31.659982 26.115695 28.0625 34.63369 28.0625 44 C 28.0625 53.36631 31.659982 61.884305 37.53125 68.28125 L 41.9375 64.21875 C 37.052609 58.891337 34.0625 51.798718 34.0625 44 C 34.0625 36.201282 37.052609 29.108663 41.9375 23.78125 L 37.53125 19.71875 z M 90.46875 19.71875 L 86.0625 23.78125 C 90.947391 29.108663 93.9375 36.201282 93.9375 44 C 93.9375 51.798718 90.947391 58.891337 86.0625 64.21875 L 90.46875 68.28125 C 96.340018 61.884305 99.9375 53.36631 99.9375 44 C 99.9375 34.63369 96.340018 26.115695 90.46875 19.71875 z M 64 34 C 58.477152 34 54 38.477152 54 44 C 54 49.522848 58.477152 54 64 54 C 69.522848 54 74 49.522848 74 44 C 74 38.477152 69.522848 34 64 34 z M 64.03125 60 L 48 123.9375 L 80 124 L 64.03125 60 z "
+       transform="translate(0,-80)"
+       id="path3765" />
+    <path
+       inkscape:connector-curvature="0"
+       style="fill:url(#linearGradient3270);fill-opacity:1;fill-rule:nonzero;stroke:none;filter:url(#filter4303)"
+       d="M 81.5625,-4 C 77.934673,-4 75,-1.065327 75,2.5625 l 0,34.875 C 75,41.065327 77.934673,44 81.5625,44 l 34.875,0 C 120.06533,44 123,41.065327 123,37.4375 l 0,-34.875 C 123,-1.065327 120.06533,-4 116.4375,-4 l -34.875,0 z M 82.71875,-2 99,14.28125 115.28125,-2 121,3.71875 104.71875,20 121,36.28125 115.28125,42 99,25.71875 82.71875,42 77,36.28125 93.28125,20 77,3.71875 82.71875,-2 z"
+       id="rect3010"
+       transform="matrix(0.88888889,0,0,0.88888889,8.8148148,6.4074073)" />
+  </g>
+</svg>

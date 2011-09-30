@@ -76,6 +76,9 @@ typedef enum {
         KEYBOARD_BRIGHTNESS_DOWN_KEY,
         KEYBOARD_BRIGHTNESS_TOGGLE_KEY,
         BATTERY_KEY,
+        WLAN_KEY,
+        BLUETOOTH_KEY,
+        UWB_KEY,
         HANDLED_KEYS
 } MediaKeyType;
 
@@ -139,6 +142,9 @@ static struct {
         { KEYBOARD_BRIGHTNESS_DOWN_KEY, NULL, "XF86KbdBrightnessDown", NULL },
         { KEYBOARD_BRIGHTNESS_TOGGLE_KEY, NULL, "XF86KbdLightOnOff", NULL },
         { BATTERY_KEY, NULL, "XF86Battery", NULL },
+        { BLUETOOTH_KEY, NULL, "XF86Bluetooth", NULL },
+        { WLAN_KEY, NULL, "XF86WLAN", NULL },
+        { UWB_KEY, NULL, "XF86UWB", NULL },
 };
 
 #endif /* __ACME_H__ */

@@ -56,6 +56,11 @@
 
 #include <libupower-glib/upower.h>
 
+#ifdef HAVE_URFKILL
+#include <liburfkill-glib/urfkill.h>
+#include "gsd-media-keys-chooser.h"
+#endif /* HAVE_URFKILL */
+
 #define GSD_DBUS_PATH "/org/gnome/SettingsDaemon"
 #define GSD_DBUS_NAME "org.gnome.SettingsDaemon"
 #define GSD_MEDIA_KEYS_DBUS_PATH GSD_DBUS_PATH "/MediaKeys"
@@ -124,6 +129,13 @@ struct GsdMediaKeysManagerPrivate
         GSList          *screens;
 
         GList           *media_players;
+
+#ifdef HAVE_URFKILL
+        /* RFkill stuff */
+        UrfClient       *urf_client;
+        GtkWidget       *chooser_dialog;
+        guint            inhibit_id;
+#endif /* HAVE_URFKILL */
 
         GDBusNodeInfo   *introspection_data;
         GDBusConnection *connection;
@@ -362,6 +374,20 @@ update_kbd_cb (GSettings           *settings,
                 gdk_flush ();
         if (gdk_error_trap_pop ())
                 g_warning ("Grab failed for some keys, another application may already have access the them.");
+
+#ifdef HAVE_URFKILL
+        if (g_strcmp0 (key, "activate-killswitch-chooser") == 0 ) {
+                if (g_settings_get_boolean (settings, key)) {
+                        if (manager->priv->inhibit_id == 0)
+                                manager->priv->inhibit_id = urf_client_inhibit (manager->priv->urf_client,
+                                                                                "g-s-d Media key",
+                                                                                NULL);
+                } else {
+                        urf_client_uninhibit (manager->priv->urf_client, manager->priv->inhibit_id);
+                        manager->priv->inhibit_id = 0;
+                }
+        }
+#endif /* HAVE_URFKILL */
 }
 
 static void
@@ -630,6 +656,84 @@ do_execute_desktop (GsdMediaKeysManager *manager,
                 g_warning ("Could not find application '%s'", desktop);
 	}
 }
+
+#ifdef HAVE_URFKILL
+static void
+chooser_dialog_init (GsdMediaKeysManager *manager)
+{
+        if (manager->priv->chooser_dialog != NULL
+            && !gsd_osd_window_is_valid (GSD_OSD_WINDOW (manager->priv->chooser_dialog))) {
+                gtk_widget_destroy (manager->priv->chooser_dialog);
+                manager->priv->chooser_dialog = NULL;
+        }
+
+        if (manager->priv->chooser_dialog == NULL) {
+                manager->priv->chooser_dialog = gsd_media_keys_chooser_new ();
+        }
+}
+
+static void
+chooser_dialog_show (GsdMediaKeysManager *manager)
+{
+        int            orig_w;
+        int            orig_h;
+        int            screen_w;
+        int            screen_h;
+        int            x;
+        int            y;
+        GtkRequisition win_req;
+        GdkRectangle   geometry;
+        int            monitor;
+
+        gtk_window_set_screen (GTK_WINDOW (manager->priv->chooser_dialog),
+                               manager->priv->current_screen);
+
+        /*
+         * get the window size
+         * if the window hasn't been mapped, it doesn't necessarily
+         * know its true size, yet, so we need to jump through hoops
+         */
+        gtk_window_get_default_size (GTK_WINDOW (manager->priv->chooser_dialog), &orig_w, &orig_h);
+        gtk_widget_size_request (manager->priv->chooser_dialog, &win_req);
+
+        if (win_req.width > orig_w)
+                orig_w = win_req.width;
+        if (win_req.height > orig_h)
+                orig_h = win_req.height;
+
+        monitor = gdk_screen_get_primary_monitor (manager->priv->current_screen);
+
+        gdk_screen_get_monitor_geometry (manager->priv->current_screen,
+                                         monitor,
+                                         &geometry);
+
+        screen_w = geometry.width;
+        screen_h = geometry.height;
+
+        x = ((screen_w - orig_w) / 2) + geometry.x;
+        y = geometry.y + (screen_h / 2) + (screen_h / 2 - orig_h) / 2;
+
+        gtk_window_move (GTK_WINDOW (manager->priv->chooser_dialog), x, y);
+
+        gtk_widget_show (manager->priv->chooser_dialog);
+
+        gdk_display_sync (gdk_screen_get_display (manager->priv->current_screen));
+}
+
+static void
+do_rfkill_action (GsdMediaKeysManager *manager)
+{
+        if (!g_settings_get_boolean (manager->priv->settings, "activate-killswitch-chooser"))
+                return;
+
+	chooser_dialog_init (manager);
+
+        gsd_media_keys_chooser_draw_icons (GSD_MEDIA_KEYS_CHOOSER (manager->priv->chooser_dialog),
+                                           GSD_MEDIA_KEYS_CHOOSER_ACTION_RFKILL);
+
+	chooser_dialog_show (manager);
+}
+#endif /* HAVE_URFKILL */
 
 static void
 do_touchpad_osd_action (GsdMediaKeysManager *manager, gboolean state)
@@ -1540,6 +1644,13 @@ do_action (GsdMediaKeysManager *manager,
         case BATTERY_KEY:
                 do_execute_desktop (manager, "gnome-power-statistics.desktop", timestamp);
                 break;
+        case BLUETOOTH_KEY:
+        case WLAN_KEY:
+        case UWB_KEY:
+#ifdef HAVE_URFKILL
+		do_rfkill_action (manager);
+#endif /* HAVE_URFKILL */
+                break;
         case HANDLED_KEYS:
                 g_assert_not_reached ();
         /* Note, no default so compiler catches missing keys */
@@ -1649,6 +1760,13 @@ start_media_keys_idle_cb (GsdMediaKeysManager *manager)
         /* for the power plugin interface code */
         manager->priv->power_settings = g_settings_new (SETTINGS_POWER_DIR);
         manager->priv->up_client = up_client_new ();
+
+#ifdef HAVE_URFKILL
+        manager->priv->inhibit_id = 0;
+        manager->priv->urf_client = urf_client_new ();
+        if (g_settings_get_boolean (manager->priv->settings, "activate-killswitch-chooser"))
+                manager->priv->inhibit_id = urf_client_inhibit (manager->priv->urf_client, "g-s-d Media key", NULL);
+#endif /* HAVE_URFKILL */
 
         /* Logic from http://git.gnome.org/browse/gnome-shell/tree/js/ui/status/accessibility.js#n163 */
         manager->priv->interface_settings = g_settings_new (SETTINGS_INTERFACE_DIR);
@@ -1839,6 +1957,18 @@ gsd_media_keys_manager_stop (GsdMediaKeysManager *manager)
                 g_list_free (priv->media_players);
                 priv->media_players = NULL;
         }
+
+#ifdef HAVE_URFKILL
+        if (priv->urf_client != NULL) {
+                g_object_unref (priv->urf_client);
+                priv->urf_client = NULL;
+        }
+
+        if (priv->chooser_dialog != NULL) {
+                gtk_widget_destroy (priv->chooser_dialog);
+                priv->chooser_dialog = NULL;
+        }
+#endif /* HAVE_URFKILL */
 }
 
 static void

@@ -59,10 +59,45 @@ libmedia_keys_la_LIBADD  = 		\
 	$(SETTINGS_PLUGIN_LIBS)						\
 	-lm
 
+if HAVE_URFKILL
+libmedia_keys_la_SOURCES +=		\
+	gsd-media-keys-chooser.h	\
+	gsd-media-keys-chooser.c
+libmedia_keys_la_CFLAGS += $(URFKILL_CFLAGS)
+libmedia_keys_la_LIBADD += $(URFKILL_LIBS)
+endif
+
 plugin_in_files = 		\
 	media-keys.gnome-settings-plugin.in
 
 plugin_DATA = $(plugin_in_files:.gnome-settings-plugin.in=.gnome-settings-plugin)
+
+if HAVE_URFKILL
+ICON_FILES = 			\
+	bt-blocked.svg		\
+	bt-unblocked.svg	\
+	wlan-blocked.svg	\
+	wlan-unblocked.svg	\
+	wwan-blocked.svg	\
+	wwan-unblocked.svg
+
+install-data-local:
+	$(mkinstalldirs) $(DESTDIR)$(icondir)/scalable/$(context)
+	$(INSTALL_DATA) $(srcdir)/bt-blocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/bt-blocked.svg
+	$(INSTALL_DATA) $(srcdir)/bt-unblocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/bt-unblocked.svg
+	$(INSTALL_DATA) $(srcdir)/wlan-blocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/wlan-blocked.svg
+	$(INSTALL_DATA) $(srcdir)/wlan-unblocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/wlan-unblocked.svg
+	$(INSTALL_DATA) $(srcdir)/wwan-blocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/wwan-blocked.svg
+	$(INSTALL_DATA) $(srcdir)/wwan-unblocked.svg $(DESTDIR)$(icondir)/scalable/$(context)/wwan-unblocked.svg
+
+uninstall-local:
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/bt-blocked.svg
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/bt-unblocked.svg
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/wlan-blocked.svg
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/wlan-unblocked.svg
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/wwan-blocked.svg
+	rm -f $(DESTDIR)$(icondir)/scalable/$(context)/wwan-unblocked.svg
+endif
 
 noinst_PROGRAMS =				\
 	test-media-keys				\
@@ -133,6 +168,14 @@ test_media_keys_LDADD = \
 	$(SETTINGS_PLUGIN_LIBS)			\
 	$(MEDIA_KEYS_LIBS)			\
 	-lm
+
+if HAVE_URFKILL
+test_media_keys_SOURCES +=		\
+	gsd-media-keys-chooser.h	\
+	gsd-media-keys-chooser.c
+test_media_keys_CFLAGS += $(URFKILL_CFLAGS)
+test_media_keys_LDADD += $(URFKILL_LIBS)
+endif
 
 EXTRA_DIST = 				\
 	gsd-marshal.list		\
