@@ -306,7 +306,6 @@ add_rfkill_icon_to_grid (GsdMediaKeysChooser *chooser,
 
         priv->event_box[type] = create_chooser_eventbox (chooser);
         gtk_container_add (GTK_CONTAINER (priv->event_box[type]), priv->icon[type]);
-        gtk_widget_show (priv->event_box[type]);
 
         g_signal_connect (G_OBJECT (priv->event_box[type]),
                           "button-press-event",
@@ -321,6 +320,7 @@ add_rfkill_icon_to_grid (GsdMediaKeysChooser *chooser,
         gtk_grid_attach (GTK_GRID (priv->grid), priv->event_box[type], type, 0, 1, 1);
 done:
         refresh_icon (chooser, type);
+        gtk_widget_show (priv->event_box[type]);
 }
 
 void
