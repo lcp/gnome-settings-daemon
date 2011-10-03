@@ -1381,6 +1381,7 @@ do_config_power_action (GsdMediaKeysManager *manager,
                 }
                 break;
         case GSD_POWER_ACTION_INTERACTIVE:
+        case GSD_POWER_ACTION_SHUTDOWN:
                 gnome_session_shutdown ();
                 break;
         case GSD_POWER_ACTION_HIBERNATE:
@@ -1392,12 +1393,10 @@ do_config_power_action (GsdMediaKeysManager *manager,
                         g_error_free (error);
                 }
                 break;
-        case GSD_POWER_ACTION_SHUTDOWN:
         case GSD_POWER_ACTION_BLANK:
         case GSD_POWER_ACTION_NOTHING:
                 /* these actions cannot be handled by media-keys and
                  * are not used in this context */
-                g_assert_not_reached ();
                 break;
         }
 }
