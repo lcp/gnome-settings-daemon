@@ -488,7 +488,9 @@ gsd_osd_window_draw (GtkWidget *widget,
 
         window = GSD_OSD_WINDOW (widget);
 
+	cairo_save (cr);
         draw_when_composited (widget, cr);
+	cairo_restore (cr);
 
         child = gtk_bin_get_child (GTK_BIN (window));
         if (child)
