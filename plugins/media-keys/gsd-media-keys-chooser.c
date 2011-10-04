@@ -14,7 +14,6 @@
 
 /* The size of the icon compared to the whole OSD */
 #define ICON_SCALE 0.50
-#define BG_ALPHA 0.75
 
 enum GsdRfkillType
 {
@@ -199,7 +198,6 @@ draw_box_frame (GtkWidget *event_box,
                 corner_radius = 0.0;
         gsd_osd_window_draw_rounded_rectangle (cr, 1.0, 2.0, 2.0, corner_radius, width-1-4, height-1-4);
         gtk_style_context_get_background_color (context, GTK_STATE_NORMAL, &acolor);
-        acolor.alpha = BG_ALPHA;
         gdk_cairo_set_source_rgba (cr, &acolor);
         cairo_stroke(cr);
 
@@ -362,39 +360,6 @@ gsd_media_keys_chooser_draw_icons (GsdMediaKeysChooser       *chooser,
         gtk_window_set_default_size (GTK_WINDOW (chooser), window_height * icon_count, window_height);
 }
 
-static gboolean
-real_draw_widget (GtkWidget *chooser,
-                  cairo_t   *cr,
-                  gpointer   user_data)
-{
-        GtkStyleContext *context;
-        GdkRGBA          acolor;
-        int              width;
-        int              height;
-        gdouble          corner_radius;
-
-        context = gtk_widget_get_style_context (chooser);
-
-        cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);
-        gtk_window_get_size (GTK_WINDOW (chooser), &width, &height);
-
-        cairo_set_source_rgba (cr, 1.0, 1.0, 1.0, 0.0);
-        cairo_paint (cr);
-
-        if (gsd_osd_window_is_composited (GSD_OSD_WINDOW (chooser)))
-                corner_radius = height / 10;
-        else
-                corner_radius = 0.0;
-        gsd_osd_window_draw_rounded_rectangle (cr, 1.0, 0.0, 0.0, corner_radius, width-1, height-1);
-        gtk_style_context_get_background_color (context, GTK_STATE_NORMAL, &acolor);
-        gsd_osd_window_color_reverse (&acolor);
-        acolor.alpha = BG_ALPHA;
-        gdk_cairo_set_source_rgba (cr, &acolor);
-        cairo_fill(cr);
-
-        return FALSE;
-}
-
 static void
 gsd_media_keys_chooser_dispose (GObject *object)
 {
@@ -414,31 +379,12 @@ gsd_media_keys_chooser_dispose (GObject *object)
         }
 }
 
-static gboolean
-gsd_media_keys_chooser_real_draw (GtkWidget *widget,
-                                  cairo_t   *cr)
-{
-        GsdMediaKeysChooser *chooser;
-        GtkWidget *child;
-
-        chooser = GSD_MEDIA_KEYS_CHOOSER (widget);
-
-        child = gtk_bin_get_child (GTK_BIN (chooser));
-        if (child)
-                gtk_container_propagate_draw (GTK_CONTAINER (chooser), child, cr);
-
-        return FALSE;
-}
-
 static void
 gsd_media_keys_chooser_class_init (GsdMediaKeysChooserClass *klass)
 {
         GObjectClass *object_class = G_OBJECT_CLASS (klass);
-        GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 
         object_class->dispose = gsd_media_keys_chooser_dispose;
-
-        widget_class->draw = gsd_media_keys_chooser_real_draw;
 
         g_type_class_add_private (klass, sizeof (GsdMediaKeysChooserPrivate));
 }
@@ -468,8 +414,6 @@ gsd_media_keys_chooser_init (GsdMediaKeysChooser *chooser)
         }
 
         gsd_osd_window_set_ignore_event (GSD_OSD_WINDOW (chooser), FALSE);
-
-        g_signal_connect (G_OBJECT (chooser), "draw", G_CALLBACK (real_draw_widget), NULL);
 }
 
 GtkWidget *
