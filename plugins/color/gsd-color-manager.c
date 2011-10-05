@@ -733,6 +733,10 @@ gcm_session_generate_vcgt (CdProfile *profile, guint size)
         const gchar *filename;
         cmsHPROFILE lcms_profile = NULL;
 
+        /* invalid size */
+        if (size == 0)
+                goto out;
+
         /* not an actual profile */
         filename = cd_profile_get_filename (profile);
         if (filename == NULL)
@@ -773,6 +777,8 @@ gnome_rr_output_get_gamma_size (GnomeRROutput *output)
         gint len = 0;
 
         crtc = gnome_rr_output_get_crtc (output);
+        if (crtc == NULL)
+                return 0;
         gnome_rr_crtc_get_gamma (crtc,
                                  &len,
                                  NULL, NULL, NULL);
@@ -815,6 +821,15 @@ gcm_session_output_set_gamma (GnomeRROutput *output,
 
         /* send to LUT */
         crtc = gnome_rr_output_get_crtc (output);
+        if (crtc == NULL) {
+                ret = FALSE;
+                g_set_error (error,
+                             GSD_COLOR_MANAGER_ERROR,
+                             GSD_COLOR_MANAGER_ERROR_FAILED,
+                             "failed to get ctrc for %s",
+                             gnome_rr_output_get_name (output));
+                goto out;
+        }
         gnome_rr_crtc_set_gamma (crtc, array->len,
                                  red, green, blue);
 out:
@@ -830,11 +845,19 @@ gcm_session_device_set_gamma (GnomeRROutput *output,
                               GError **error)
 {
         gboolean ret = FALSE;
+        guint size;
         GPtrArray *clut = NULL;
 
         /* create a lookup table */
-        clut = gcm_session_generate_vcgt (profile,
-                                          gnome_rr_output_get_gamma_size (output));
+        size = gnome_rr_output_get_gamma_size (output);
+        if (size == 0) {
+                g_set_error_literal (error,
+                                     GSD_COLOR_MANAGER_ERROR,
+                                     GSD_COLOR_MANAGER_ERROR_FAILED,
+                                     "gamma size is zero");
+                goto out;
+        }
+        clut = gcm_session_generate_vcgt (profile, size);
         if (clut == NULL) {
                 g_set_error_literal (error,
                                      GSD_COLOR_MANAGER_ERROR,
@@ -868,6 +891,14 @@ gcm_session_device_reset_gamma (GnomeRROutput *output,
         g_debug ("falling back to dummy ramp");
         clut = g_ptr_array_new_with_free_func (g_free);
         size = gnome_rr_output_get_gamma_size (output);
+        if (size == 0) {
+                ret = FALSE;
+                g_set_error_literal (error,
+                                     GSD_COLOR_MANAGER_ERROR,
+                                     GSD_COLOR_MANAGER_ERROR_FAILED,
+                                     "gamma size is zero");
+                goto out;
+        }
         for (i = 0; i < size; i++) {
                 value = (i * 0xffff) / (size - 1);
                 data = g_new0 (GnomeRROutputClutItem, 1);
@@ -1364,6 +1395,69 @@ out:
 }
 
 static void
+gcm_session_profile_gamma_find_device_cb (GObject *object,
+                                          GAsyncResult *res,
+                                          gpointer user_data)
+{
+        CdClient *client = CD_CLIENT (object);
+        CdDevice *device = NULL;
+        GError *error = NULL;
+        GsdColorManager *manager = GSD_COLOR_MANAGER (user_data);
+
+        device = cd_client_find_device_by_property_finish (client,
+                                                           res,
+                                                           &error);
+        if (device == NULL) {
+                g_warning ("not found device %s: %s",
+                           cd_device_get_id (device),
+                           error->message);
+                g_error_free (error);
+                goto out;
+        }
+
+        /* get properties */
+        cd_device_connect (device,
+                           NULL,
+                           gcm_session_device_assign_connect_cb,
+                           manager);
+out:
+        if (device != NULL)
+                g_object_unref (device);
+}
+
+/* We have to reset the gamma tables each time as if the primary output
+ * has changed then different crtcs are going to be used.
+ * See https://bugzilla.gnome.org/show_bug.cgi?id=660164 for an example */
+static void
+gnome_rr_screen_output_changed_cb (GnomeRRScreen *screen,
+                                   GsdColorManager *manager)
+{
+        GnomeRROutput **outputs;
+        GsdColorManagerPrivate *priv = manager->priv;
+        guint i;
+
+        /* get X11 outputs */
+        outputs = gnome_rr_screen_list_outputs (priv->x11_screen);
+        if (outputs == NULL) {
+                g_warning ("failed to get outputs");
+                return;
+        }
+        for (i = 0; outputs[i] != NULL; i++) {
+                if (!gnome_rr_output_is_connected (outputs[i]))
+                        continue;
+
+                /* get CdDevice for this output */
+                cd_client_find_device_by_property (manager->priv->client,
+                                                   CD_DEVICE_METADATA_XRANDR_NAME,
+                                                   gnome_rr_output_get_name (outputs[i]),
+                                                   NULL,
+                                                   gcm_session_profile_gamma_find_device_cb,
+                                                   manager);
+        }
+
+}
+
+static void
 gcm_session_client_connect_cb (GObject *source_object,
                                GAsyncResult *res,
                                gpointer user_data)
@@ -1421,6 +1515,9 @@ gcm_session_client_connect_cb (GObject *source_object,
                           manager);
         g_signal_connect (priv->x11_screen, "output-disconnected",
                           G_CALLBACK (gnome_rr_screen_output_removed_cb),
+                          manager);
+        g_signal_connect (priv->x11_screen, "changed",
+                          G_CALLBACK (gnome_rr_screen_output_changed_cb),
                           manager);
 
         g_signal_connect (priv->client, "profile-added",

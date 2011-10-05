@@ -621,6 +621,8 @@ engine_recalculate_state_icon (GsdPowerManager *manager)
 
         /* show a different icon if we are disconnected */
         icon = engine_get_icon (manager);
+        gtk_status_icon_set_visible (manager->priv->status_icon, icon != NULL);
+
         if (icon == NULL) {
                 /* none before, now none */
                 if (manager->priv->previous_icon == NULL)
@@ -628,9 +630,6 @@ engine_recalculate_state_icon (GsdPowerManager *manager)
 
                 g_object_unref (manager->priv->previous_icon);
                 manager->priv->previous_icon = NULL;
-
-                /* set fallback icon */
-                gtk_status_icon_set_visible (manager->priv->status_icon, FALSE);
                 return TRUE;
         }
 
@@ -638,7 +637,6 @@ engine_recalculate_state_icon (GsdPowerManager *manager)
         if (manager->priv->previous_icon == NULL) {
 
                 /* set fallback icon */
-                gtk_status_icon_set_visible (manager->priv->status_icon, TRUE);
                 gtk_status_icon_set_from_gicon (manager->priv->status_icon, icon);
                 manager->priv->previous_icon = icon;
                 return TRUE;
@@ -648,9 +646,6 @@ engine_recalculate_state_icon (GsdPowerManager *manager)
         if (!g_icon_equal (manager->priv->previous_icon, icon)) {
                 g_object_unref (manager->priv->previous_icon);
                 manager->priv->previous_icon = icon;
-
-                /* set fallback icon */
-                gtk_status_icon_set_from_gicon (manager->priv->status_icon, icon);
                 return TRUE;
         }
 
@@ -3270,6 +3265,8 @@ gboolean
 gsd_power_manager_start (GsdPowerManager *manager,
                          GError **error)
 {
+        gboolean ret;
+
         g_debug ("Starting power manager");
         gnome_settings_profile_start (NULL);
 
@@ -3413,6 +3410,13 @@ gsd_power_manager_start (GsdPowerManager *manager,
         /* coldplug the list of screens */
         manager->priv->x11_screen = gnome_settings_session_get_screen (error);
         if (manager->priv->x11_screen == NULL)
+                return FALSE;
+
+        /* ensure the default dpms timeouts are cleared */
+        ret = gnome_rr_screen_set_dpms_mode (manager->priv->x11_screen,
+                                             GNOME_RR_DPMS_ON,
+                                             error);
+        if (!ret)
                 return FALSE;
 
         /* coldplug the engine */
