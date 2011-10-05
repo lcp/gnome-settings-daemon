@@ -286,7 +286,7 @@ rfkill_state_changed_callback (UrfKillswitch *killswitch,
         gint type;
 
         type = get_gsd_rfkill_type (killswitch);
-        if (type > 0)
+        if (type >= 0)
                 refresh_icon (GSD_MEDIA_KEYS_CHOOSER (data), type);
 }
 
