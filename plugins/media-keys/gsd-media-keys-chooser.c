@@ -12,8 +12,8 @@
 
 #define GSD_MEDIA_KEYS_CHOOSER_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), GSD_TYPE_MEDIA_KEYS_CHOOSER, GsdMediaKeysChooserPrivate))
 
-/* The size of the icon compared to the whole OSD */
-#define ICON_SCALE 0.50
+#define ICON_SCALE 0.50 /* The size of the icon compared to the whole OSD */
+#define BOX_BG_ALPHA 0.50
 
 enum GsdRfkillType
 {
@@ -175,15 +175,15 @@ refresh_icon (GsdMediaKeysChooser *chooser,
 }
 
 static gboolean
-draw_box_frame (GtkWidget *event_box,
-                cairo_t   *cr,
-                gpointer   user_data)
+draw_box_background (GtkWidget *event_box,
+                     cairo_t   *cr,
+                     gpointer   user_data)
 {
-	GsdOsdWindow    *window = GSD_OSD_WINDOW (user_data);
-	GtkStyleContext	*context;
-	GdkRGBA		 acolor;
-	int		 width;
-	int		 height;
+        GsdOsdWindow    *window = GSD_OSD_WINDOW (user_data);
+        GtkStyleContext *context;
+        GdkRGBA          acolor;
+        int              width;
+        int              height;
         gdouble          corner_radius;
 
         context = gtk_widget_get_style_context (event_box);
@@ -196,10 +196,11 @@ draw_box_frame (GtkWidget *event_box,
                 corner_radius = height / 10;
         else
                 corner_radius = 0.0;
-        gsd_osd_window_draw_rounded_rectangle (cr, 1.0, 2.0, 2.0, corner_radius, width-1-4, height-1-4);
+        gsd_osd_window_draw_rounded_rectangle (cr, 1.0, 0.0, 0.0, corner_radius, width-1, height-1);
         gtk_style_context_get_background_color (context, GTK_STATE_NORMAL, &acolor);
+        acolor.alpha = BOX_BG_ALPHA;
         gdk_cairo_set_source_rgba (cr, &acolor);
-        cairo_stroke(cr);
+        cairo_fill(cr);
 
         return FALSE;
 }
@@ -215,7 +216,7 @@ enter_notify_callback (GtkWidget      *event_box,
 
         g_signal_connect (G_OBJECT (event_box),
                           "draw",
-                          G_CALLBACK (draw_box_frame),
+                          G_CALLBACK (draw_box_background),
                           window);
         gtk_widget_queue_draw (event_box);
 
@@ -232,7 +233,7 @@ leave_notify_callback (GtkWidget      *event_box,
         gsd_osd_window_update_and_hide (window);
 
         g_signal_handlers_disconnect_by_func (G_OBJECT (event_box),
-                                              G_CALLBACK (draw_box_frame),
+                                              G_CALLBACK (draw_box_background),
                                               window);
         gtk_widget_queue_draw (event_box);
 
