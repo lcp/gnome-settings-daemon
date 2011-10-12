@@ -2147,11 +2147,13 @@ up_client_changed_cb (UpClient *client, GsdPowerManager *manager)
 {
         gboolean tmp;
 
-        /* if we are playing a critical charge sound loop on AC, stop it */
-        if (!up_client_get_on_battery (client) &&
-            manager->priv->critical_alert_timeout_id > 0) {
-                g_debug ("stopping alert loop due to ac being present");
-                play_loop_stop (manager);
+        if (!up_client_get_on_battery (client)) {
+            /* if we are playing a critical charge sound loop on AC, stop it */
+            if (manager->priv->critical_alert_timeout_id > 0) {
+                 g_debug ("stopping alert loop due to ac being present");
+                 play_loop_stop (manager);
+            }
+            notify_close_if_showing (manager->priv->notification_low);
         }
 
         /* same state */
@@ -2968,6 +2970,8 @@ idle_set_timeout_dim (GsdPowerManager *manager, guint timeout)
         guint timeout_adjusted;
 
         idle_time_in_msec = gpm_idletime_get_time (manager->priv->idletime);
+        if (idle_time_in_msec == 0)
+                return FALSE;
         timeout_adjusted  = idle_adjust_timeout_dim (idle_time_in_msec / 1000, timeout);
         g_debug ("Current idle time=%lldms, timeout was %us, becomes %us after adjustment",
                    (long long int)idle_time_in_msec, timeout, timeout_adjusted);
@@ -3306,7 +3310,7 @@ gsd_power_manager_start (GsdPowerManager *manager,
          * that is only shown in fallback mode */
         gtk_status_icon_set_title (manager->priv->status_icon, _("Power Manager"));
 
-        /* connect to UPower for async power opertations */
+        /* connect to UPower for async power operations */
         g_dbus_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
                                   G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES,
                                   NULL,
