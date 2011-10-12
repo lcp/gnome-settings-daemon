@@ -13,7 +13,7 @@
 #define GSD_MEDIA_KEYS_CHOOSER_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), GSD_TYPE_MEDIA_KEYS_CHOOSER, GsdMediaKeysChooserPrivate))
 
 #define ICON_SCALE 0.50 /* The size of the icon compared to the whole OSD */
-#define BOX_BG_ALPHA 0.50
+#define BOX_BG_ALPHA 0.33
 
 enum GsdRfkillType
 {
