@@ -188,7 +188,7 @@ draw_box_background (GtkWidget *event_box,
 
         context = gtk_widget_get_style_context (event_box);
 
-        cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);
+        cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
         width = gtk_widget_get_allocated_width (event_box);
         height = gtk_widget_get_allocated_height (event_box);
 
