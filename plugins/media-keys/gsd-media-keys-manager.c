@@ -390,6 +390,20 @@ gsettings_changed_cb (GSettings           *settings,
                 gdk_flush ();
         if (gdk_error_trap_pop ())
                 g_warning ("Grab failed for some keys, another application may already have access the them.");
+
+#ifdef HAVE_URFKILL
+        if (g_strcmp0 (settings_key, "activate-killswitch-chooser") == 0 ) {
+                if (g_settings_get_boolean (settings, settings_key)) {
+                        if (manager->priv->inhibit_id == 0)
+                                manager->priv->inhibit_id = urf_client_inhibit (manager->priv->urf_client,
+                                                                                "g-s-d Media key",
+                                                                                NULL);
+                } else {
+                        urf_client_uninhibit (manager->priv->urf_client, manager->priv->inhibit_id);
+                        manager->priv->inhibit_id = 0;
+                }
+        }
+#endif /* HAVE_URFKILL */
 }
 
 static char *
