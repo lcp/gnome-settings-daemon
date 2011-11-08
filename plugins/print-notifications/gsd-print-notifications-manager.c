@@ -47,6 +47,7 @@
 
 #define RENEW_INTERVAL        3500
 #define SUBSCRIPTION_DURATION 3600
+#define CONNECTING_TIMEOUT    60
 
 struct GsdPrintNotificationsManagerPrivate
 {
@@ -57,6 +58,8 @@ struct GsdPrintNotificationsManagerPrivate
         gint                          num_dests;
         gboolean                      scp_handler_spawned;
         GPid                          scp_handler_pid;
+        GList                        *timeouts;
+        GHashTable                   *printing_printers;
 };
 
 enum {
@@ -131,6 +134,59 @@ strcmp0(const void *a, const void *b)
         return g_strcmp0 (*((gchar **) a), *((gchar **) b));
 }
 
+struct
+{
+        gchar *printer_name;
+        gchar *primary_text;
+        gchar *secondary_text;
+        guint  timeout_id;
+        GsdPrintNotificationsManager *manager;
+} typedef TimeoutData;
+
+static void
+free_timeout_data (gpointer user_data)
+{
+        TimeoutData *data = (TimeoutData *) user_data;
+
+        if (data) {
+                g_free (data->printer_name);
+                g_free (data->primary_text);
+                g_free (data->secondary_text);
+                g_free (data);
+        }
+}
+
+static gboolean
+show_notification (gpointer user_data)
+{
+        NotifyNotification *notification;
+        TimeoutData        *data = (TimeoutData *) user_data;
+        GList              *tmp;
+
+        if (!data)
+                return FALSE;
+
+        notification = notify_notification_new (data->primary_text,
+                                                data->secondary_text,
+                                                "printer-symbolic");
+
+        notify_notification_set_app_name (notification, _("Printers"));
+        notify_notification_set_hint (notification,
+                                      "transient",
+                                      g_variant_new_boolean (TRUE));
+        notify_notification_show (notification, NULL);
+
+        g_object_unref (notification);
+
+        tmp = g_list_find (data->manager->priv->timeouts, data);
+        if (tmp) {
+                data->manager->priv->timeouts = g_list_remove_link (data->manager->priv->timeouts, tmp);
+                g_list_free_full (tmp, free_timeout_data);
+        }
+
+        return FALSE;
+}
+
 static void
 on_cups_notification (GDBusConnection *connection,
                       const char      *sender_name,
@@ -182,7 +238,7 @@ on_cups_notification (GDBusConnection *connection,
                 N_("Not connected?"),
                 /* Translators: One or more covers on the printer are open (same as in system-config-printer) */
                 N_("Cover open"),
-                /* Trnaslators: A filter or backend is not installed (same as in system-config-printer) */
+                /* Translators: A filter or backend is not installed (same as in system-config-printer) */
                 N_("Printer configuration error"),
                 /* Translators: One or more doors on the printer are open (same as in system-config-printer) */
                 N_("Door open"),
@@ -208,7 +264,7 @@ on_cups_notification (GDBusConnection *connection,
                 N_("Printer '%s' may not be connected."),
                 /* Translators: One or more covers on the printer are open (same as in system-config-printer) */
                 N_("The cover is open on printer '%s'."),
-                /* Trnaslators: A filter or backend is not installed (same as in system-config-printer) */
+                /* Translators: A filter or backend is not installed (same as in system-config-printer) */
                 N_("There is a missing print filter for "
                    "printer '%s'."),
                 /* Translators: One or more doors on the printer are open (same as in system-config-printer) */
@@ -267,11 +323,14 @@ on_cups_notification (GDBusConnection *connection,
                 else {
                         job_uri = g_strdup_printf ("ipp://localhost/jobs/%d", job_id);
 
-                        request = ippNewRequest(IPP_GET_JOB_ATTRIBUTES);
-                        ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI, "job-uri", NULL, job_uri);
-                        ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                        request = ippNewRequest (IPP_GET_JOB_ATTRIBUTES);
+                        ippAddString (request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                                      "job-uri", NULL, job_uri);
+                        ippAddString (request, IPP_TAG_OPERATION, IPP_TAG_NAME,
+                                     "requesting-user-name", NULL, cupsUser ());
+                        ippAddString (request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
                                      "requested-attributes", NULL, "job-originating-user-name");
-                        response = cupsDoRequest(http, request, "/");
+                        response = cupsDoRequest (http, request, "/");
 
                         if (response) {
                                 if (response->request.status.status_code <= IPP_OK_CONFLICT &&
@@ -309,6 +368,9 @@ on_cups_notification (GDBusConnection *connection,
                 cupsFreeDests (manager->priv->num_dests, manager->priv->dests);
                 manager->priv->num_dests = cupsGetDests (&manager->priv->dests);
         } else if (g_strcmp0 (signal_name, "JobCompleted") == 0 && my_job) {
+                g_hash_table_remove (manager->priv->printing_printers,
+                                     printer_name);
+
                 /* FIXME: get a better human readable name */
                 display_name = g_strdup (printer_name);
 
@@ -350,10 +412,20 @@ on_cups_notification (GDBusConnection *connection,
 
                 switch (job_state) {
                         case IPP_JOB_PROCESSING:
+                                g_hash_table_insert (manager->priv->printing_printers,
+                                                     g_strdup (printer_name), NULL);
+
                                 /* Translators: A job is printing */
                                 primary_text = g_strdup (_("Printing"));
                                 /* Translators: "print-job xy" on a printer */
                                 secondary_text = g_strdup_printf (_("\"%s\" on %s"), job_name, display_name);
+                                break;
+                        case IPP_JOB_STOPPED:
+                        case IPP_JOB_CANCELED:
+                        case IPP_JOB_ABORTED:
+                        case IPP_JOB_COMPLETED:
+                                g_hash_table_remove (manager->priv->printing_printers,
+                                                     printer_name);
                                 break;
                         default:
                                 break;
@@ -365,6 +437,9 @@ on_cups_notification (GDBusConnection *connection,
                                               manager->priv->num_dests);
 
                 if (job_state == IPP_JOB_PROCESSING) {
+                        g_hash_table_insert (manager->priv->printing_printers,
+                                             g_strdup (printer_name), NULL);
+
                         /* Translators: A job is printing */
                         primary_text = g_strdup (_("Printing"));
                         /* Translators: "print-job xy" on a printer */
@@ -379,91 +454,128 @@ on_cups_notification (GDBusConnection *connection,
                 gchar       **new_state_reasons = NULL;
                 gint          i, j;
 
-                /* FIXME: get a better human readable name */
-                display_name = g_strdup (printer_name);
+                /* Remove timeout which shows notification about possible disconnection of printer
+                 * if "connecting-to-device" has vanished.
+                 */
+                if (printer_state_reasons == NULL ||
+                    g_strrstr (printer_state_reasons, "connecting-to-device") == NULL) {
+                        TimeoutData *data;
+                        GList       *tmp;
 
-                dest = cupsGetDest (printer_name,
-                                    NULL,
-                                    manager->priv->num_dests,
-                                    manager->priv->dests);
-                if (dest)
-                        tmp_printer_state_reasons = cupsGetOption ("printer-state-reasons",
-                                                                   dest->num_options,
-                                                                   dest->options);
-
-                if (tmp_printer_state_reasons)
-                        old_state_reasons = g_strsplit (tmp_printer_state_reasons, ",", -1);
-
-                cupsFreeDests (manager->priv->num_dests, manager->priv->dests);
-                manager->priv->num_dests = cupsGetDests (&manager->priv->dests);
-
-                dest = cupsGetDest (printer_name,
-                                    NULL,
-                                    manager->priv->num_dests,
-                                    manager->priv->dests);
-                if (dest)
-                        tmp_printer_state_reasons = cupsGetOption ("printer-state-reasons",
-                                                                   dest->num_options,
-                                                                   dest->options);
-
-                if (tmp_printer_state_reasons)
-                        new_state_reasons = g_strsplit (tmp_printer_state_reasons, ",", -1);
-
-                if (new_state_reasons)
-                        qsort (new_state_reasons,
-                               g_strv_length (new_state_reasons),
-                               sizeof (gchar *),
-                               strcmp0);
-
-                if (old_state_reasons) {
-                        qsort (old_state_reasons,
-                               g_strv_length (old_state_reasons),
-                               sizeof (gchar *),
-                               strcmp0);
-
-                        j = 0;
-                        for (i = 0; i < g_strv_length (new_state_reasons); i++) {
-                                while (old_state_reasons[j] &&
-                                       g_strcmp0 (old_state_reasons[j], new_state_reasons[i]) < 0)
-                                        j++;
-
-                                if (old_state_reasons[j] == NULL ||
-                                    g_strcmp0 (old_state_reasons[j], new_state_reasons[i]) != 0)
-                                        added_reasons = g_slist_append (added_reasons,
-                                                                        new_state_reasons[i]);
-                        }
-                }
-                else {
-                        for (i = 0; i < g_strv_length (new_state_reasons); i++) {
-                                added_reasons = g_slist_append (added_reasons,
-                                                                new_state_reasons[i]);
-                        }
-                }
-
-                for (tmp_list = added_reasons; tmp_list; tmp_list = tmp_list->next) {
-                        gchar *data = (gchar *) tmp_list->data;
-                        for (j = 0; j < G_N_ELEMENTS (reasons); j++) {
-                                if (strncmp (data,
-                                             reasons[j],
-                                             strlen (reasons[j])) == 0) {
-                                        NotifyNotification *notification;
-                                        gchar *second_row = g_strdup_printf (statuses_second[j], printer_name);
-
-                                        notification = notify_notification_new (statuses_first[j],
-                                                                                second_row,
-                                                                                "printer-symbolic");
-                                        notify_notification_set_app_name (notification, _("Printers"));
-                                        notify_notification_set_hint (notification,
-                                                                      "transient",
-                                                                      g_variant_new_boolean (TRUE));
-                                        notify_notification_show (notification, NULL);
-
-                                        g_object_unref (notification);
-                                        g_free (second_row);
+                        for (tmp = manager->priv->timeouts; tmp; tmp = g_list_next (tmp)) {
+                                data = (TimeoutData *) tmp->data;
+                                if (g_strcmp0 (printer_name, data->printer_name) == 0) {
+                                        g_source_remove (data->timeout_id);
+                                        manager->priv->timeouts = g_list_remove_link (manager->priv->timeouts, tmp);
+                                        g_list_free_full (tmp, free_timeout_data);
+                                        break;
                                 }
                         }
                 }
-                g_slist_free (added_reasons);
+
+                /* Check whether we are printing on this printer right now. */
+                if (g_hash_table_lookup_extended (manager->priv->printing_printers, printer_name, NULL, NULL)) {
+                        /* FIXME: get a better human readable name */
+                        display_name = g_strdup (printer_name);
+
+                        dest = cupsGetDest (printer_name,
+                                            NULL,
+                                            manager->priv->num_dests,
+                                            manager->priv->dests);
+                        if (dest)
+                                tmp_printer_state_reasons = cupsGetOption ("printer-state-reasons",
+                                                                           dest->num_options,
+                                                                           dest->options);
+
+                        if (tmp_printer_state_reasons)
+                                old_state_reasons = g_strsplit (tmp_printer_state_reasons, ",", -1);
+
+                        cupsFreeDests (manager->priv->num_dests, manager->priv->dests);
+                        manager->priv->num_dests = cupsGetDests (&manager->priv->dests);
+
+                        dest = cupsGetDest (printer_name,
+                                            NULL,
+                                            manager->priv->num_dests,
+                                            manager->priv->dests);
+                        if (dest)
+                                tmp_printer_state_reasons = cupsGetOption ("printer-state-reasons",
+                                                                           dest->num_options,
+                                                                           dest->options);
+
+                        if (tmp_printer_state_reasons)
+                                new_state_reasons = g_strsplit (tmp_printer_state_reasons, ",", -1);
+
+                        if (new_state_reasons)
+                                qsort (new_state_reasons,
+                                       g_strv_length (new_state_reasons),
+                                       sizeof (gchar *),
+                                       strcmp0);
+
+                        if (old_state_reasons) {
+                                qsort (old_state_reasons,
+                                       g_strv_length (old_state_reasons),
+                                       sizeof (gchar *),
+                                       strcmp0);
+
+                                j = 0;
+                                for (i = 0; new_state_reasons && i < g_strv_length (new_state_reasons); i++) {
+                                        while (old_state_reasons[j] &&
+                                               g_strcmp0 (old_state_reasons[j], new_state_reasons[i]) < 0)
+                                                j++;
+
+                                        if (old_state_reasons[j] == NULL ||
+                                            g_strcmp0 (old_state_reasons[j], new_state_reasons[i]) != 0)
+                                                added_reasons = g_slist_append (added_reasons,
+                                                                                new_state_reasons[i]);
+                                }
+                        }
+                        else {
+                                for (i = 0; new_state_reasons && i < g_strv_length (new_state_reasons); i++) {
+                                        added_reasons = g_slist_append (added_reasons,
+                                                                        new_state_reasons[i]);
+                                }
+                        }
+
+                        for (tmp_list = added_reasons; tmp_list; tmp_list = tmp_list->next) {
+                                gchar *data = (gchar *) tmp_list->data;
+                                for (j = 0; j < G_N_ELEMENTS (reasons); j++) {
+                                        if (strncmp (data,
+                                                     reasons[j],
+                                                     strlen (reasons[j])) == 0) {
+                                                NotifyNotification *notification;
+
+                                                if (g_strcmp0 (reasons[j], "connecting-to-device") == 0) {
+                                                        TimeoutData *data;
+
+                                                        data = g_new0 (TimeoutData, 1);
+                                                        data->printer_name = g_strdup (printer_name);
+                                                        data->primary_text = g_strdup (statuses_first[j]);
+                                                        data->secondary_text = g_strdup_printf (statuses_second[j], printer_name);
+                                                        data->manager = manager;
+
+                                                        data->timeout_id = g_timeout_add_seconds (CONNECTING_TIMEOUT, show_notification, data);
+                                                        manager->priv->timeouts = g_list_append (manager->priv->timeouts, data);
+                                                }
+                                                else {
+                                                        gchar *second_row = g_strdup_printf (statuses_second[j], printer_name);
+
+                                                        notification = notify_notification_new (statuses_first[j],
+                                                                                                second_row,
+                                                                                                "printer-symbolic");
+                                                        notify_notification_set_app_name (notification, _("Printers"));
+                                                        notify_notification_set_hint (notification,
+                                                                                      "transient",
+                                                                                      g_variant_new_boolean (TRUE));
+                                                        notify_notification_show (notification, NULL);
+
+                                                        g_object_unref (notification);
+                                                        g_free (second_row);
+                                                }
+                                        }
+                                }
+                        }
+                        g_slist_free (added_reasons);
+                }
         }
 
         g_free (display_name);
@@ -618,6 +730,8 @@ gsd_print_notifications_manager_start (GsdPrintNotificationsManager *manager,
         manager->priv->dests = NULL;
         manager->priv->num_dests = 0;
         manager->priv->scp_handler_spawned = FALSE;
+        manager->priv->timeouts = NULL;
+        manager->priv->printing_printers = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 
         renew_subscription (manager);
         g_timeout_add_seconds (RENEW_INTERVAL, renew_subscription, manager);
@@ -662,6 +776,9 @@ gsd_print_notifications_manager_start (GsdPrintNotificationsManager *manager,
 void
 gsd_print_notifications_manager_stop (GsdPrintNotificationsManager *manager)
 {
+        TimeoutData *data;
+        GList       *tmp;
+
         g_debug ("Stopping print-notifications manager");
 
         cupsFreeDests (manager->priv->num_dests, manager->priv->dests);
@@ -671,12 +788,21 @@ gsd_print_notifications_manager_stop (GsdPrintNotificationsManager *manager)
         if (manager->priv->subscription_id >= 0)
                 cancel_subscription (manager->priv->subscription_id);
 
+        g_hash_table_destroy (manager->priv->printing_printers);
+
         manager->priv->cups_bus_connection = NULL;
 
         if (manager->priv->cups_proxy != NULL) {
                 g_object_unref (manager->priv->cups_proxy);
                 manager->priv->cups_proxy = NULL;
         }
+
+        for (tmp = manager->priv->timeouts; tmp; tmp = g_list_next (tmp)) {
+                data = (TimeoutData *) tmp->data;
+                if (data)
+                        g_source_remove (data->timeout_id);
+        }
+        g_list_free_full (manager->priv->timeouts, free_timeout_data);
 
         scp_handler (manager, FALSE);
 }

@@ -492,12 +492,12 @@ out:
 static wchar_t *
 utf8_to_wchar_t (const char *src)
 {
-        gsize len;
-        gsize converted;
+        size_t len;
+        size_t converted;
         wchar_t *buf = NULL;
 
         len = mbstowcs (NULL, src, 0);
-        if (len < 0) {
+        if (len == (size_t) -1) {
                 g_warning ("Invalid UTF-8 in string %s", src);
                 goto out;
         }
@@ -1255,6 +1255,12 @@ gcm_session_add_x11_output (GsdColorManager *manager, GnomeRROutput *output)
         if (serial == NULL)
                 serial = "unknown";
 
+        /* ensure mandatory fields are set */
+        if (model == NULL)
+                model = "unknown";
+        if (vendor == NULL)
+                vendor = "unknown";
+
         device_id = gcm_session_get_output_id (manager, output);
         g_debug ("output %s added", device_id);
         device_props = g_hash_table_new_full (g_str_hash, g_str_equal,
@@ -1918,7 +1924,6 @@ gcm_session_profile_store_added_cb (GcmProfileStore *profile_store,
                                     const gchar *filename,
                                     GsdColorManager *manager)
 {
-        CdProfile *profile = NULL;
         gchar *checksum = NULL;
         gchar *profile_id = NULL;
         GError *error = NULL;
@@ -1958,8 +1963,6 @@ out:
         g_free (profile_id);
         if (profile_props != NULL)
                 g_hash_table_unref (profile_props);
-        if (profile != NULL)
-                g_object_unref (profile);
 }
 
 static void

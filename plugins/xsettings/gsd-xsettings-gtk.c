@@ -92,7 +92,7 @@ process_desktop_file (const char      *path,
 {
         GKeyFile *keyfile;
         char *retval;
-        const char *module_name;
+        char *module_name;
 
         retval = NULL;
 
@@ -112,8 +112,8 @@ process_desktop_file (const char      *path,
                 goto bail;
 
         if (g_key_file_has_key (keyfile, "GTK Module", "X-GTK-Module-Enabled-Schema", NULL) != FALSE) {
-                const char *schema;
-                const char *key;
+                char *schema;
+                char *key;
                 gboolean enabled;
                 GSettings *settings;
                 char *signal;
@@ -132,12 +132,16 @@ process_desktop_file (const char      *path,
                 g_signal_connect (G_OBJECT (settings), signal,
                                   G_CALLBACK (cond_setting_changed), gtk);
                 g_free (signal);
+                g_free (schema);
+                g_free (key);
 
                 if (enabled != FALSE)
                         retval = g_strdup (module_name);
         } else {
                 retval = g_strdup (module_name);
         }
+
+	g_free (module_name);
 
 bail:
         g_key_file_free (keyfile);
@@ -259,6 +263,9 @@ update_gtk_modules (GsdXSettingsGtk *gtk)
         } else {
                 g_free (modules);
         }
+
+	g_strfreev (enabled);
+	g_strfreev (disabled);
 }
 
 static void

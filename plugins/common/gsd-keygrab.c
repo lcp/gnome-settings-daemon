@@ -22,13 +22,14 @@
 
 #include "config.h"
 
+#include <string.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
+#include <gtk/gtk.h>
 #include <X11/XKBlib.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/extensions/XKB.h>
 #include <gdk/gdkkeysyms.h>
-
-#include "eggaccelerators.h"
 
 #include "gsd-keygrab.h"
 
@@ -64,10 +65,7 @@ setup_modifiers (void)
 
                 /* NumLock can be assigned to varying keys so we need to
                  * resolve and ignore it specially */
-                dynmods = 0;
-                egg_keymap_resolve_virtual_modifiers (gdk_keymap_get_default (),
-                                                      EGG_VIRTUAL_NUM_LOCK_MASK,
-                                                      &dynmods);
+                dynmods = XkbKeysymToModifiers (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()), GDK_KEY_Num_Lock);
 
                 gsd_ignored_mods |= dynmods;
                 gsd_used_mods &= ~dynmods;
@@ -78,21 +76,38 @@ static void
 grab_key_real (guint      keycode,
                GdkWindow *root,
                gboolean   grab,
-               int        mask)
+               XIGrabModifiers *mods,
+               int        num_mods)
 {
+	XIEventMask evmask;
+	unsigned char mask[(XI_LASTEVENT + 7)/8];
+
+	memset (mask, 0, sizeof (mask));
+	XISetMask (mask, XI_KeyPress);
+	XISetMask (mask, XI_KeyRelease);
+
+	evmask.deviceid = XIAllMasterDevices;
+	evmask.mask_len = sizeof (mask);
+	evmask.mask = mask;
+
         if (grab) {
-                XGrabKey (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
-                          keycode,
-                          mask,
-                          GDK_WINDOW_XID (root),
-                          True,
-                          GrabModeAsync,
-                          GrabModeAsync);
+                XIGrabKeycode (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
+                               XIAllMasterDevices,
+                               keycode,
+                               GDK_WINDOW_XID (root),
+                               GrabModeAsync,
+                               GrabModeAsync,
+                               False,
+                               &evmask,
+                               num_mods,
+                               mods);
         } else {
-                XUngrabKey (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
-                            keycode,
-                            mask,
-                            GDK_WINDOW_XID (root));
+                XIUngrabKeycode (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
+                                 XIAllMasterDevices,
+                                 keycode,
+                                 GDK_WINDOW_XID (root),
+                                 num_mods,
+                                 mods);
         }
 }
 
@@ -122,20 +137,22 @@ grab_key_unsafe (Key                 *key,
                  gboolean             grab,
                  GSList              *screens)
 {
-        int   indexes[N_BITS]; /* indexes of bits we need to flip */
-        int   i;
-        int   bit;
-        int   bits_set_cnt;
-        int   uppervalue;
-        guint mask, modifiers;
+        int     indexes[N_BITS]; /* indexes of bits we need to flip */
+        int     i;
+        int     bit;
+        int     bits_set_cnt;
+        int     uppervalue;
+        guint   mask, modifiers;
+        GArray *all_mods;
+        GSList *l;
 
         setup_modifiers ();
 
         mask = gsd_ignored_mods & ~key->state & GDK_MODIFIER_MASK;
 
         /* XGrabKey requires real modifiers, not virtual ones */
-        egg_keymap_resolve_virtual_modifiers (gdk_keymap_get_default (),
-					      key->state, &modifiers);
+        modifiers = key->state;
+        gdk_keymap_map_virtual_modifiers (gdk_keymap_get_default (), &modifiers);
 
         /* If key doesn't have a usable modifier, we don't want
          * to grab it, since the user might lose a useful key.
@@ -175,12 +192,13 @@ grab_key_unsafe (Key                 *key,
 
         bits_set_cnt = bit;
 
+	all_mods = g_array_new (FALSE, TRUE, sizeof(XIGrabModifiers));
         uppervalue = 1 << bits_set_cnt;
-        /* grab all possible modifier combinations for our mask */
+        /* store all possible modifier combinations for our mask into all_mods */
         for (i = 0; i < uppervalue; ++i) {
-                GSList *l;
                 int     j;
                 int     result = 0;
+                XIGrabModifiers *mod;
 
                 /* map bits in the counter to those in the mask */
                 for (j = 0; j < bits_set_cnt; ++j) {
@@ -189,18 +207,26 @@ grab_key_unsafe (Key                 *key,
                         }
                 }
 
-                for (l = screens; l; l = l->next) {
-                        GdkScreen *screen = l->data;
-                        guint *code;
+                /* Grow the array by one, to fit our new XIGrabModifiers item */
+                g_array_set_size (all_mods, all_mods->len + 1);
+                mod = &g_array_index (all_mods, XIGrabModifiers, all_mods->len - 1);
+                mod->modifiers = result | modifiers;
+        }
 
-                        for (code = key->keycodes; *code; ++code) {
-                                grab_key_real (*code,
-                                               gdk_screen_get_root_window (screen),
-                                               grab,
-                                               result | modifiers);
-                        }
+	/* Capture the actual keycodes with the modifier array */
+        for (l = screens; l; l = l->next) {
+                GdkScreen *screen = l->data;
+                guint *code;
+
+                for (code = key->keycodes; *code; ++code) {
+                        grab_key_real (*code,
+                                       gdk_screen_get_root_window (screen),
+                                       grab,
+                                       (XIGrabModifiers *) all_mods->data,
+                                       all_mods->len);
                 }
         }
+        g_array_free (all_mods, TRUE);
 }
 
 static gboolean
@@ -237,6 +263,77 @@ key_uses_keycode (const Key *key, guint keycode)
 	return FALSE;
 }
 
+/* Adapted from _gdk_x11_device_xi2_translate_state()
+ * in gtk+/gdk/x11/gdkdevice-xi2.c */
+static guint
+device_xi2_translate_state (XIModifierState *mods_state,
+			    XIGroupState    *group_state)
+{
+	guint state;
+	gint group;
+
+	state = (guint) mods_state->base | mods_state->latched | mods_state->locked;
+
+	group = group_state->base | group_state->latched | group_state->locked;
+	/* FIXME: do we need the XKB complications for this ? */
+	group = CLAMP(group, 0, 3);
+	state |= group << 13;
+
+	return state;
+}
+
+gboolean
+match_xi2_key (Key *key, XIDeviceEvent *event)
+{
+	guint keyval;
+	GdkModifierType consumed;
+	gint group;
+	guint keycode, state;
+
+	if (key == NULL)
+		return FALSE;
+
+	setup_modifiers ();
+
+	state = device_xi2_translate_state (&event->mods, &event->group);
+
+	if (have_xkb (event->display))
+		group = XkbGroupForCoreState (state);
+	else
+		group = (state & GDK_KEY_Mode_switch) ? 1 : 0;
+
+	keycode = event->detail;
+
+	/* Check if we find a keysym that matches our current state */
+	if (gdk_keymap_translate_keyboard_state (gdk_keymap_get_default (), keycode,
+						 state, group,
+						 &keyval, NULL, NULL, &consumed)) {
+		guint lower, upper;
+		guint mask;
+
+		/* The Key structure contains virtual modifiers, whereas
+		 * the XEvent will be using the real modifier, so translate those */
+		mask = key->state;
+		gdk_keymap_map_virtual_modifiers (gdk_keymap_get_default (), &mask);
+
+		gdk_keyval_convert_case (keyval, &lower, &upper);
+
+		/* If we are checking against the lower version of the
+		 * keysym, we might need the Shift state for matching,
+		 * so remove it from the consumed modifiers */
+		if (lower == key->keysym)
+			consumed &= ~GDK_SHIFT_MASK;
+
+		return ((lower == key->keysym || upper == key->keysym)
+			&& (state & ~consumed & gsd_used_mods) == mask);
+	}
+
+	/* The key we passed doesn't have a keysym, so try with just the keycode */
+        return (key != NULL
+                && key->state == (state & gsd_used_mods)
+                && key_uses_keycode (key, keycode));
+}
+
 gboolean
 match_key (Key *key, XEvent *event)
 {
@@ -263,8 +360,8 @@ match_key (Key *key, XEvent *event)
 
 		/* The Key structure contains virtual modifiers, whereas
 		 * the XEvent will be using the real modifier, so translate those */
-		egg_keymap_resolve_virtual_modifiers (gdk_keymap_get_default (),
-						      key->state, &mask);
+		mask = key->state;
+		gdk_keymap_map_virtual_modifiers (gdk_keymap_get_default (), &mask);
 
 		gdk_keyval_convert_case (keyval, &lower, &upper);
 
@@ -282,4 +379,36 @@ match_key (Key *key, XEvent *event)
         return (key != NULL
                 && key->state == (event->xkey.state & gsd_used_mods)
                 && key_uses_keycode (key, event->xkey.keycode));
+}
+
+Key *
+parse_key (const char *str)
+{
+	Key *key;
+
+	if (str == NULL ||
+	    *str == '\0' ||
+	    g_str_equal (str, "disabled")) {
+		return NULL;
+	}
+
+	key = g_new0 (Key, 1);
+	gtk_accelerator_parse_with_keycode (str, &key->keysym, &key->keycodes, &key->state);
+	if (key->keysym == 0 &&
+	    key->keycodes == NULL &&
+	    key->state == 0) {
+		g_free (key);
+                return NULL;
+	}
+
+	return key;
+}
+
+void
+free_key (Key *key)
+{
+	if (key == NULL)
+		return;
+	g_free (key->keycodes);
+	g_free (key);
 }

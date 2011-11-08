@@ -60,6 +60,17 @@ static GDBusNodeInfo *pdi_introspection_data = NULL;
 #define GNOME_SESSION_DBUS_IFACE                "org.gnome.SessionManager"
 #define GNOME_SESSION_CLIENT_PRIVATE_DBUS_IFACE "org.gnome.SessionManager.ClientPrivate"
 
+#define GNOME_SESSION_PRESENCE_DBUS_PATH  "/org/gnome/SessionManager/Presence"
+#define GNOME_SESSION_PRESENCE_DBUS_IFACE "org.gnome.SessionManager.Presence"
+
+enum {
+  PRESENCE_STATUS_AVAILABLE = 0,
+  PRESENCE_STATUS_INVISIBLE,
+  PRESENCE_STATUS_BUSY,
+  PRESENCE_STATUS_IDLE,
+  PRESENCE_STATUS_UNKNOWN
+};
+
 static const gchar npn_introspection_xml[] =
   "<node name='/com/redhat/NewPrinterNotification'>"
   "  <interface name='com.redhat.NewPrinterNotification'>"
@@ -88,6 +99,10 @@ static const gchar pdi_introspection_xml[] =
   "</node>";
 
 static GMainLoop *main_loop;
+static guint      npn_registration_id;
+static guint      pdi_registration_id;
+static guint      npn_owner_id;
+static guint      pdi_owner_id;
 
 static GHashTable *
 get_missing_executables (const gchar *ppd_file_name)
@@ -758,7 +773,7 @@ set_default_paper_size (const gchar *printer_name,
         GVariant    *input;
         GVariant    *output;
         GError      *error = NULL;
-        gchar      **value = NULL;
+        gchar       *value = NULL;
         gint         i, j, k;
         const gchar *paper_size;
 
@@ -798,8 +813,7 @@ set_default_paper_size (const gchar *printer_name,
                                                                                  ppd_file->groups[i].options[j].choices[k].choice,
                                                                                  strlen (paper_size)) == 0 &&
                                                             !ppd_file->groups[i].options[j].choices[k].marked) {
-                                                            value = g_new0 (gchar *, 2);
-                                                            value[0] = g_strdup (ppd_file->groups[i].options[j].choices[k].choice);
+                                                            value = g_strdup (ppd_file->groups[i].options[j].choices[k].choice);
                                                             break;
                                                         }
                                                 }
@@ -810,14 +824,15 @@ set_default_paper_size (const gchar *printer_name,
         }
 
         if (value) {
-                GVariant *array;
+                GVariantBuilder *builder;
 
-                array = g_variant_new_strv ((const gchar * const *)value, -1);
+                builder = g_variant_builder_new (G_VARIANT_TYPE ("as"));
+                g_variant_builder_add (builder, "s", value);
 
-                input = g_variant_new ("(ssv)",
+                input = g_variant_new ("(ssas)",
                                        printer_name ? printer_name : "",
-                                       "PageSize-default",
-                                       array);
+                                       "PageSize",
+                                       builder);
 
                 output = g_dbus_proxy_call_sync (proxy,
                                                  "PrinterAddOptionDefault",
@@ -834,9 +849,9 @@ set_default_paper_size (const gchar *printer_name,
                         g_error_free (error);
                 }
 
+                g_variant_builder_unref (builder);
                 g_variant_unref (input);
-                g_variant_unref (array);
-                g_strfreev (value);
+                g_free (value);
         }
 
         g_object_unref (proxy);
@@ -1088,20 +1103,57 @@ static const GDBusInterfaceVTable interface_vtable =
 };
 
 static void
+unregister_objects ()
+{
+        GDBusConnection *system_connection;
+        GError          *error = NULL;
+
+        system_connection = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, &error);
+
+        if (npn_registration_id > 0) {
+                g_dbus_connection_unregister_object (system_connection, npn_registration_id);
+                npn_registration_id = 0;
+        }
+
+        if (pdi_registration_id > 0) {
+                g_dbus_connection_unregister_object (system_connection, pdi_registration_id);
+                pdi_registration_id = 0;
+        }
+}
+
+static void
+unown_names ()
+{
+        if (npn_owner_id > 0) {
+                g_bus_unown_name (npn_owner_id);
+                npn_owner_id = 0;
+        }
+
+        if (pdi_owner_id > 0) {
+                g_bus_unown_name (pdi_owner_id);
+                pdi_owner_id = 0;
+        }
+}
+
+static void
 on_npn_bus_acquired (GDBusConnection *connection,
                      const gchar     *name,
                      gpointer         user_data)
 {
-  guint registration_id;
+        GError *error = NULL;
 
-  registration_id = g_dbus_connection_register_object (connection,
-                                                       SCP_DBUS_NPN_PATH,
-                                                       npn_introspection_data->interfaces[0],
-                                                       &interface_vtable,
-                                                       NULL,
-                                                       NULL,
-                                                       NULL);
-  g_assert (registration_id > 0);
+        npn_registration_id = g_dbus_connection_register_object (connection,
+                                                                 SCP_DBUS_NPN_PATH,
+                                                                 npn_introspection_data->interfaces[0],
+                                                                 &interface_vtable,
+                                                                 NULL,
+                                                                 NULL,
+                                                                 &error);
+
+        if (npn_registration_id == 0) {
+                g_warning ("Failed to register object: %s\n", error->message);
+                g_error_free (error);
+        }
 }
 
 static void
@@ -1109,16 +1161,20 @@ on_pdi_bus_acquired (GDBusConnection *connection,
                      const gchar     *name,
                      gpointer         user_data)
 {
-  guint registration_id;
+        GError *error = NULL;
 
-  registration_id = g_dbus_connection_register_object (connection,
-                                                       SCP_DBUS_PDI_PATH,
-                                                       pdi_introspection_data->interfaces[0],
-                                                       &interface_vtable,
-                                                       NULL,
-                                                       NULL,
-                                                       NULL);
-  g_assert (registration_id > 0);
+        pdi_registration_id = g_dbus_connection_register_object (connection,
+                                                                 SCP_DBUS_PDI_PATH,
+                                                                 pdi_introspection_data->interfaces[0],
+                                                                 &interface_vtable,
+                                                                 NULL,
+                                                                 NULL,
+                                                                 &error);
+
+        if (pdi_registration_id == 0) {
+                g_warning ("Failed to register object: %s\n", error->message);
+                g_error_free (error);
+        }
 }
 
 static void
@@ -1133,6 +1189,49 @@ on_name_lost (GDBusConnection *connection,
               const gchar     *name,
               gpointer         user_data)
 {
+        unregister_objects ();
+}
+
+static void
+session_signal_handler (GDBusConnection  *connection,
+                        const gchar      *sender_name,
+                        const gchar      *object_path,
+                        const gchar      *interface_name,
+                        const gchar      *signal_name,
+                        GVariant         *parameters,
+                        gpointer          user_data)
+{
+        guint            new_status;
+
+        g_variant_get (parameters, "(u)", &new_status);
+
+        if (new_status == PRESENCE_STATUS_IDLE ||
+            new_status == PRESENCE_STATUS_AVAILABLE) {
+                unregister_objects ();
+                unown_names ();
+
+                if (new_status == PRESENCE_STATUS_AVAILABLE) {
+                        npn_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
+                                                       SCP_DBUS_NPN_NAME,
+                                                       G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+                                                       G_BUS_NAME_OWNER_FLAGS_REPLACE,
+                                                       on_npn_bus_acquired,
+                                                       on_name_acquired,
+                                                       on_name_lost,
+                                                       NULL,
+                                                       NULL);
+
+                        pdi_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
+                                                       SCP_DBUS_PDI_NAME,
+                                                       G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+                                                       G_BUS_NAME_OWNER_FLAGS_REPLACE,
+                                                       on_pdi_bus_acquired,
+                                                       on_name_acquired,
+                                                       on_name_lost,
+                                                       NULL,
+                                                       NULL);
+                }
+        }
 }
 
 static void
@@ -1245,9 +1344,8 @@ main (int argc, char *argv[])
   GDBusConnection *connection;
   gboolean         client_signal_subscription_set = FALSE;
   GError          *error = NULL;
-  guint            npn_owner_id;
-  guint            pdi_owner_id;
   guint            client_signal_subscription_id;
+  guint            session_signal_subscription_id;
   gchar           *object_path;
 
   bindtextdomain (GETTEXT_PACKAGE, GNOME_SETTINGS_LOCALEDIR);
@@ -1255,19 +1353,46 @@ main (int argc, char *argv[])
   textdomain (GETTEXT_PACKAGE);
   setlocale (LC_ALL, "");
 
+  npn_registration_id = 0;
+  pdi_registration_id = 0;
+  npn_owner_id = 0;
+  pdi_owner_id = 0;
+
   g_type_init ();
 
   notify_init ("gnome-settings-daemon-printer");
 
   npn_introspection_data =
-          g_dbus_node_info_new_for_xml (npn_introspection_xml, NULL);
-  g_assert (npn_introspection_data != NULL);
+          g_dbus_node_info_new_for_xml (npn_introspection_xml, &error);
+
+  if (npn_introspection_data == NULL) {
+          g_warning ("Error parsing introspection XML: %s\n", error->message);
+          g_error_free (error);
+          goto error;
+  }
 
   pdi_introspection_data =
-          g_dbus_node_info_new_for_xml (pdi_introspection_xml, NULL);
-  g_assert (pdi_introspection_data != NULL);
+          g_dbus_node_info_new_for_xml (pdi_introspection_xml, &error);
+
+  if (pdi_introspection_data == NULL) {
+          g_warning ("Error parsing introspection XML: %s\n", error->message);
+          g_error_free (error);
+          goto error;
+  }
 
   connection = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
+
+  session_signal_subscription_id =
+    g_dbus_connection_signal_subscribe (connection,
+                                        NULL,
+                                        GNOME_SESSION_PRESENCE_DBUS_IFACE,
+                                        "StatusChanged",
+                                        GNOME_SESSION_PRESENCE_DBUS_PATH,
+                                        NULL,
+                                        G_DBUS_SIGNAL_FLAGS_NONE,
+                                        session_signal_handler,
+                                        NULL,
+                                        NULL);
 
   object_path = register_gnome_session_client ("gsd-printer", "");
   if (object_path) {
@@ -1285,33 +1410,37 @@ main (int argc, char *argv[])
           client_signal_subscription_set = TRUE;
   }
 
+  if (npn_owner_id == 0)
+          npn_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
+                                         SCP_DBUS_NPN_NAME,
+                                         G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+                                         G_BUS_NAME_OWNER_FLAGS_REPLACE,
+                                         on_npn_bus_acquired,
+                                         on_name_acquired,
+                                         on_name_lost,
+                                         NULL,
+                                         NULL);
 
-  npn_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
-                                 SCP_DBUS_NPN_NAME,
-                                 G_BUS_NAME_OWNER_FLAGS_NONE,
-                                 on_npn_bus_acquired,
-                                 on_name_acquired,
-                                 on_name_lost,
-                                 NULL,
-                                 NULL);
-
-  pdi_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
-                                 SCP_DBUS_PDI_NAME,
-                                 G_BUS_NAME_OWNER_FLAGS_NONE,
-                                 on_pdi_bus_acquired,
-                                 on_name_acquired,
-                                 on_name_lost,
-                                 NULL,
-                                 NULL);
+  if (pdi_owner_id == 0)
+          pdi_owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
+                                         SCP_DBUS_PDI_NAME,
+                                         G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+                                         G_BUS_NAME_OWNER_FLAGS_REPLACE,
+                                         on_pdi_bus_acquired,
+                                         on_name_acquired,
+                                         on_name_lost,
+                                         NULL,
+                                         NULL);
 
   main_loop = g_main_loop_new (NULL, FALSE);
   g_main_loop_run (main_loop);
 
-  g_bus_unown_name (npn_owner_id);
-  g_bus_unown_name (pdi_owner_id);
+  unregister_objects ();
+  unown_names ();
 
   if (client_signal_subscription_set)
           g_dbus_connection_signal_unsubscribe (connection, client_signal_subscription_id);
+  g_dbus_connection_signal_unsubscribe (connection, session_signal_subscription_id);
 
   g_free (object_path);
 
@@ -1319,4 +1448,14 @@ main (int argc, char *argv[])
   g_dbus_node_info_unref (pdi_introspection_data);
 
   return 0;
+
+error:
+
+  if (npn_introspection_data)
+          g_dbus_node_info_unref (npn_introspection_data);
+
+  if (pdi_introspection_data)
+          g_dbus_node_info_unref (pdi_introspection_data);
+
+  return 1;
 }

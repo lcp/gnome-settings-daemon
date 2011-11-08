@@ -24,6 +24,7 @@ G_BEGIN_DECLS
 
 #include <glib.h>
 #include <X11/keysym.h>
+#include <X11/extensions/XInput2.h>
 
 typedef struct {
         guint keysym;
@@ -33,14 +34,19 @@ typedef struct {
 
 
 void	        grab_key_unsafe	(Key     *key,
-		        	 gboolean grab,
+				 gboolean grab,
 			         GSList  *screens);
 
-gboolean        match_key       (Key     *key,
-                                 XEvent  *event);
+gboolean        match_xi2_key   (Key           *key,
+                                 XIDeviceEvent *event);
+gboolean        match_key       (Key           *key,
+				 XEvent        *event);
 
 gboolean        key_uses_keycode (const Key *key,
                                   guint keycode);
+
+Key *           parse_key        (const char    *str);
+void            free_key         (Key           *key);
 
 G_END_DECLS
 

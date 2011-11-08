@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/wait.h>
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
 #include <libupower-glib/upower.h>
@@ -1184,6 +1185,8 @@ engine_ups_discharging (GsdPowerManager *manager, UpDevice *device)
                                          NOTIFY_URGENCY_NORMAL);
         /* TRANSLATORS: this is the notification application name */
         notify_notification_set_app_name (manager->priv->notification_discharging, _("Power"));
+        notify_notification_set_hint (manager->priv->notification_discharging,
+                                      "transient", g_variant_new_boolean (TRUE));
         g_object_add_weak_pointer (G_OBJECT (manager->priv->notification_discharging),
                                    (gpointer) &manager->priv->notification_discharging);
 
@@ -1360,6 +1363,8 @@ engine_charge_low (GsdPowerManager *manager, UpDevice *device)
         notify_notification_set_urgency (manager->priv->notification_low,
                                          NOTIFY_URGENCY_NORMAL);
         notify_notification_set_app_name (manager->priv->notification_low, _("Power"));
+        notify_notification_set_hint (manager->priv->notification_low,
+                                      "transient", g_variant_new_boolean (TRUE));
         g_object_add_weak_pointer (G_OBJECT (manager->priv->notification_low),
                                    (gpointer) &manager->priv->notification_low);
 
@@ -3060,7 +3065,7 @@ session_proxy_ready_cb (GObject *source_object,
 
         manager->priv->session_proxy = g_dbus_proxy_new_for_bus_finish (res, &error);
         if (manager->priv->session_proxy == NULL) {
-                g_warning ("Could not connect to gnome-sesson: %s",
+                g_warning ("Could not connect to gnome-session: %s",
                            error->message);
                 g_error_free (error);
                 return;

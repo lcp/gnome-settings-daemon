@@ -50,7 +50,7 @@ GLIB_REQUIRED_VERSION=2.29.14
 GTK_REQUIRED_VERSION=2.99.3
 GCONF_REQUIRED_VERSION=2.6.1
 GIO_REQUIRED_VERSION=2.26.0
-GNOME_DESKTOP_REQUIRED_VERSION=3.1.5
+GNOME_DESKTOP_REQUIRED_VERSION=3.3.1
 LIBNOTIFY_REQUIRED_VERSION=0.7.3
 UPOWER_GLIB_REQUIRED_VERSION=0.9.1
 PA_REQUIRED_VERSION=0.9.16
@@ -145,6 +145,26 @@ fi
 AC_SUBST(DBUS_SYS_DIR)
 
 dnl ---------------------------------------------------------------------------
+dnl - GUdev integration (default enabled)
+dnl ---------------------------------------------------------------------------
+GUDEV_PKG=""
+AC_ARG_ENABLE(gudev, AS_HELP_STRING([--disable-gudev],[Disable GUdev support]), enable_gudev=$enableval)
+if test x$enable_gudev != xno; then
+	PKG_CHECK_MODULES(GUDEV, gudev-1.0, HAVE_GUDEV="yes", HAVE_GUDEV="no")
+	if test "x$HAVE_GUDEV" = "xyes"; then
+		AC_DEFINE(HAVE_GUDEV, 1, [define if GUdev is available])
+		GUDEV_PKG="gudev-1.0"
+	else
+		if test x$enable_gudev = xyes; then
+			AC_MSG_ERROR([GUdev enabled but not found])
+		fi
+	fi
+else
+	HAVE_GUDEV=no
+fi
+AM_CONDITIONAL(HAVE_GUDEV, test x$HAVE_GUDEV = xyes)
+
+dnl ---------------------------------------------------------------------------
 dnl - common
 dnl ---------------------------------------------------------------------------
 
@@ -197,7 +217,7 @@ dnl ---------------------------------------------------------------------------
 dnl - media-keys plugin stuff
 dnl ---------------------------------------------------------------------------
 
-PKG_CHECK_MODULES(MEDIA_KEYS, [gio-unix-2.0 libpulse >= $PA_REQUIRED_VERSION libpulse-mainloop-glib >= $PA_REQUIRED_VERSION libcanberra-gtk3])
+PKG_CHECK_MODULES(MEDIA_KEYS, [gio-unix-2.0 libpulse >= $PA_REQUIRED_VERSION $GUDEV_PKG libpulse-mainloop-glib >= $PA_REQUIRED_VERSION libcanberra gconf-2.0 >= $GCONF_REQUIRED_VERSION])
 
 dnl ---------------------------------------------------------------------------
 dnl - color
@@ -231,25 +251,6 @@ AM_CONDITIONAL(HAVE_PACKAGEKIT, test "x$have_packagekit" = "xtrue")
 
 AC_SUBST(PACKAGEKIT_CFLAGS)
 AC_SUBST(PACKAGEKIT_LIBS)
-
-dnl ---------------------------------------------------------------------------
-dnl - GUdev integration (default enabled)
-dnl ---------------------------------------------------------------------------
-AC_ARG_ENABLE(gudev, AS_HELP_STRING([--disable-gudev],[Disable GUdev support]), enable_gudev=$enableval)
-if test x$enable_gudev != xno; then
-	PKG_CHECK_MODULES(GUDEV, gudev-1.0, HAVE_GUDEV="yes", HAVE_GUDEV="no")
-	if test "x$HAVE_GUDEV" = "xyes"; then
-		AC_DEFINE(HAVE_GUDEV, 1, [define if GUdev is available])
-	else
-		if test x$enable_gudev = xyes; then
-			AC_MSG_ERROR([GUdev enabled but not found])
-		fi
-	fi
-else
-	HAVE_GUDEV=no
-fi
-AM_CONDITIONAL(HAVE_GUDEV, test x$HAVE_GUDEV = xyes)
-
 
 dnl ==============================================
 dnl smartcard section
@@ -505,7 +506,6 @@ plugins/datetime/Makefile
 plugins/dummy/Makefile
 plugins/power/Makefile
 plugins/housekeeping/Makefile
-plugins/keybindings/Makefile
 plugins/keyboard/Makefile
 plugins/media-keys/Makefile
 plugins/media-keys/cut-n-paste/Makefile

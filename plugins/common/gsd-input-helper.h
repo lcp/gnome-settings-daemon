@@ -49,7 +49,7 @@ typedef struct {
 } PropertyHelper;
 
 gboolean  supports_xinput_devices  (void);
-gboolean  supports_xinput2_devices (void);
+gboolean  supports_xinput2_devices (int *opcode);
 
 gboolean set_device_enabled       (int device_id,
                                    gboolean enabled);
@@ -70,6 +70,7 @@ gboolean  run_custom_command      (GdkDevice              *device,
                                    CustomCommand           command);
 
 GList *   get_disabled_devices    (GdkDeviceManager       *manager);
+char *    xdevice_get_device_node (int                     deviceid);
 
 G_END_DECLS
 

@@ -86,24 +86,35 @@ device_set_property (XDevice        *xdevice,
         return TRUE;
 }
 
-gboolean
-supports_xinput_devices (void)
+static gboolean
+supports_xinput_devices_with_opcode (int *opcode)
 {
         gint op_code, event, error;
+        gboolean retval;
 
-        return XQueryExtension (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
-                                "XInputExtension",
-                                &op_code,
-                                &event,
-                                &error);
+        retval = XQueryExtension (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
+				  "XInputExtension",
+				  &op_code,
+				  &event,
+				  &error);
+	if (opcode)
+		*opcode = op_code;
+
+	return retval;
 }
 
 gboolean
-supports_xinput2_devices (void)
+supports_xinput_devices (void)
+{
+	return supports_xinput_devices_with_opcode (NULL);
+}
+
+gboolean
+supports_xinput2_devices (int *opcode)
 {
         int major, minor;
 
-        if (supports_xinput_devices () == FALSE)
+        if (supports_xinput_devices_with_opcode (opcode) == FALSE)
                 return FALSE;
 
         gdk_error_trap_push ();
@@ -223,6 +234,54 @@ touchpad_is_present (void)
 {
         return device_type_is_present (device_info_is_touchpad,
                                        device_is_touchpad);
+}
+
+char *
+xdevice_get_device_node (int deviceid)
+{
+        Atom           prop;
+        Atom           act_type;
+        int            act_format;
+        unsigned long  nitems, bytes_after;
+        unsigned char *data;
+        char          *ret;
+
+        gdk_display_sync (gdk_display_get_default ());
+
+        prop = XInternAtom (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()), "Device Node", False);
+        if (!prop)
+                return NULL;
+
+        gdk_error_trap_push ();
+
+        if (!XIGetProperty (GDK_DISPLAY_XDISPLAY (gdk_display_get_default ()),
+                            deviceid, prop, 0, 1000, False,
+                            AnyPropertyType, &act_type, &act_format,
+                            &nitems, &bytes_after, &data) == Success) {
+                gdk_error_trap_pop_ignored ();
+                return NULL;
+        }
+        if (gdk_error_trap_pop ())
+                goto out;
+
+        if (nitems == 0)
+                goto out;
+
+        if (act_type != XA_STRING)
+                goto out;
+
+        /* Unknown string format */
+        if (act_format != 8)
+                goto out;
+
+        ret = g_strdup ((char *) data);
+
+        XFree (data);
+        return ret;
+
+out:
+        XFree (data);
+        return NULL;
 }
 
 gboolean
@@ -350,6 +409,8 @@ get_disabled_devices (GdkDeviceManager *manager)
 
                 ret = g_list_prepend (ret, GINT_TO_POINTER (device_info[i].id));
         }
+
+        XFreeDeviceList (device_info);
 
         return ret;
 }
